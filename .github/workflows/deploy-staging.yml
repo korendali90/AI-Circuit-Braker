@@ -1,0 +1,30 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy API
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-api-staging --remote-only
+      - name: Deploy Proxy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-proxy-staging --remote-only
+      - name: Deploy Frontend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-frontend-staging --remote-only
+      - name: Smoke test
+        run: |
+          sleep 10
+          curl --fail https://cb-api-staging.fly.dev/health || exit 1
+          echo "Staging deploy successful"

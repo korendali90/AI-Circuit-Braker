@@ -1,0 +1,35 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Run migrations
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl ssh console -a cb-api-production -C "alembic upgrade head"
+      - name: Deploy API
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-api-production --remote-only
+      - name: Deploy Proxy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-proxy-production --remote-only
+      - name: Deploy Frontend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app cb-frontend-production --remote-only
+      - name: Smoke test production
+        run: |
+          sleep 15
+          curl --fail https://cb-api-production.fly.dev/health || exit 1

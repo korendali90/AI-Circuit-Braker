@@ -1,0 +1,76 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cb_user
+          POSTGRES_PASSWORD: cb_pass
+          POSTGRES_DB: circuit_breaker_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install -r apps/api/requirements.txt
+          pip install -r apps/proxy/requirements.txt
+          pip install ruff mypy pytest pytest-asyncio fakeredis httpx
+      - name: Lint
+        run: ruff check apps/ packages/
+      - name: Type check
+        run: mypy apps/ packages/ --ignore-missing-imports --no-strict-optional
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://cb_user:cb_pass@localhost:5432/circuit_breaker_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test-secret-key-for-ci
+          ENCRYPTION_KEY: test-encryption-key-32chars!!!!!
+        run: pytest apps/proxy/tests/ apps/api/tests/ -v --tb=short
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: apps/frontend
+      - name: Type check
+        run: npm run type-check
+        working-directory: apps/frontend
+      - name: Lint
+        run: npm run lint
+        working-directory: apps/frontend
+      - name: Test
+        run: npm run test
+        working-directory: apps/frontend

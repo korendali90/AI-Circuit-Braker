@@ -1,0 +1,85 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cb_user
+      POSTGRES_PASSWORD: cb_pass
+      POSTGRES_DB: circuit_breaker
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cb_user -d circuit_breaker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["uvicorn", "apps.api.app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    working_dir: /app
+
+  proxy:
+    build:
+      context: .
+      dockerfile: docker/proxy.Dockerfile
+    command: ["uvicorn", "apps.proxy.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    working_dir: /app
+
+  frontend:
+    build:
+      context: apps/frontend
+      dockerfile: ../../docker/frontend.Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
