@@ -1,8 +1,10 @@
 name: Deploy to Staging
 
 on:
-  push:
-    branches: [main]
+  # Triggered manually from the GitHub Actions UI.
+  # Switch back to `push: branches: [main]` once FLY_API_TOKEN is added
+  # as a repository secret and the Fly.io apps are created.
+  workflow_dispatch:
 
 jobs:
   deploy:
